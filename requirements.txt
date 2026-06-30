@@ -17,4 +17,3 @@ aiofiles
 python-dotenv
 gunicorn
 kagglehub
-docker

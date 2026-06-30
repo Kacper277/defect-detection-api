@@ -49,3 +49,7 @@ docker-compose.override.yml
 *.swp
 *.bak
 *~
+
+# Monitoring runtime logs
+monitoring/logs/*.jsonl
+monitoring/logs/*.json

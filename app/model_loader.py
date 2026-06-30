@@ -178,6 +178,8 @@ class ModelService:
         # Grad-CAM
         heatmap = self.gradcam.generate(input_tensor, class_idx=predicted_class)
 
+        mean_pixel = float(image.mean())
+
         return {
             "predicted_class": self.classes[predicted_class],
             "predicted_index": predicted_class,

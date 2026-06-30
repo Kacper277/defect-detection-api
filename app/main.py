@@ -2,7 +2,7 @@
 FastAPI REST API dla detekcji wad produkcyjnych.
 
 Endpoints:
-- POST /predict: przyjmuje obraz, zwraca predykcję + heatmapę Grad-CAM
+- POST /predict: przyjmuje obraz, zwraca predykcję + opcjonalnie heatmapę Grad-CAM
 - GET /health: health check
 - GET /classes: lista klas
 """
@@ -14,7 +14,7 @@ from typing import Optional
 import cv2
 import numpy as np
 from fastapi import FastAPI, File, UploadFile, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel
 
 # Dodaj katalog główny do ścieżki
@@ -40,6 +40,7 @@ class PredictResponse(BaseModel):
     confidence: float
     all_probabilities: dict[str, float]
     heatmap_shape: list[int]
+    heatmap: Optional[list[list[float]]] = None  # ← teraz opcjonalna
 
 
 class HealthResponse(BaseModel):
@@ -57,55 +58,13 @@ def startup():
         print("Model załadowany pomyślnie!")
     except Exception as e:
         print(f"BŁĄD ładowania modelu: {e}")
-        # Nie przerywamy startu - API będzie działać,
-        # ale /predict zwróci 503
 
 
-# ============================================================
-# NOWY ENDPOINT: Strona główna przekierowująca do /docs
-# ============================================================
-@app.get("/", response_class=HTMLResponse)
+@app.get("/", include_in_schema=False)
 async def root():
-    """
-    Strona główna API – wyświetla podstawowe informacje i link do dokumentacji.
-    Możesz też od razu przekierować do /docs (zakomentowana alternatywa).
-    """
-    # Alternatywa: natychmiastowe przekierowanie
-    # return RedirectResponse(url="/docs")
-    
-    html_content = """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>API do detekcji wad produkcyjnych</title>
-        <style>
-            body { font-family: Arial, sans-serif; margin: 60px; background: #f5f5f5; }
-            .container { max-width: 700px; margin: auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
-            h1 { color: #333; }
-            .btn { display: inline-block; padding: 12px 24px; background: #0066cc; color: white; text-decoration: none; border-radius: 5px; margin: 10px 5px; }
-            .btn:hover { background: #0052a3; }
-            code { background: #eee; padding: 2px 6px; border-radius: 3px; }
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <h1>🔍 API do detekcji wad produkcyjnych</h1>
-            <p>Wykrywanie defektów na zdjęciach z użyciem modelu <strong>ResNet-18</strong> i wizualizacji <strong>Grad-CAM</strong>.</p>
-            <p>Dostępne endpointy:</p>
-            <ul>
-                <li><code>/health</code> – status serwera i modelu</li>
-                <li><code>/classes</code> – lista klas defektów</li>
-                <li><code>/predict</code> – predykcja dla przesłanego obrazu</li>
-            </ul>
-            <p>
-                <a href="/docs" class="btn">📖 Dokumentacja Swagger UI</a>
-                <a href="/redoc" class="btn">📄 Dokumentacja ReDoc</a>
-            </p>
-        </div>
-    </body>
-    </html>
-    """
-    return HTMLResponse(content=html_content)
+    """Przekierowuje do dokumentacji Swagger UI"""
+    return RedirectResponse(url="/docs")
+
 
 @app.get("/health", response_model=HealthResponse)
 def health_check():
@@ -138,14 +97,14 @@ def get_classes():
 @app.post("/predict", response_model=PredictResponse)
 async def predict(
     file: UploadFile = File(...),
-    include_heatmap: bool = True,
+    include_heatmap: bool = False,  # ← teraz domyślnie False – szybciej
 ):
     """
     Wykonuje predykcję defektu na przesłanym obrazie.
 
     Args:
         file: obraz w formacie JPEG, PNG, BMP, TIFF
-        include_heatmap: czy zwrócić heatmapę Grad-CAM
+        include_heatmap: czy zwrócić heatmapę Grad-CAM (duża odpowiedź!)
 
     Returns:
         predicted_class: nazwa wykrytego defektu
@@ -174,7 +133,7 @@ async def predict(
             detail="Przesłany plik jest pusty lub zbyt mały.",
         )
 
-        # Wykonaj predykcję
+    # Wykonaj predykcję
     try:
         service = get_model_service()
         result = service.predict_bytes(contents)
@@ -182,8 +141,10 @@ async def predict(
         # Monitoring: loguj predykcję i wykrywaj dryf
         try:
             log_prediction(result, contents)
-            drift = detect_drift({"mean_pixel": result.get("_mean_pixel", 128),
-                                  "confidence": result["confidence"]})
+            drift = detect_drift({
+                "mean_pixel": result.get("_mean_pixel", 128),  # ← teraz działa
+                "confidence": result["confidence"]
+            })
             if drift.get("drift_detected"):
                 print(f"[DRIFT ALERT] {drift}")
         except Exception as e:
@@ -197,6 +158,10 @@ async def predict(
             "all_probabilities": result["all_probabilities"],
             "heatmap_shape": list(result["heatmap_shape"]),
         }
+
+        # Warunkowe dołączanie heatmapy
+        if include_heatmap:
+            response["heatmap"] = result["heatmap"]
 
         return response
 

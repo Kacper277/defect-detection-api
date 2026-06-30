@@ -2,3 +2,6 @@ requests
 numpy
 scipy
 matplotlib
+streamlit
+pandas
+plotly
