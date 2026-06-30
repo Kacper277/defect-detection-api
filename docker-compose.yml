@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: defect-detection-api
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONPATH=/app
+      - DEVICE=cpu
+    volumes:
+      # Mapowanie checkpointów (model już wbudowany w obraz,
+      # ale można nadpisać dla szybkiego testowania)
+      - ./checkpoints:/app/checkpoints
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Opcjonalnie: prosty dashboard monitoringu (data drift)
+  monitoring:
+    image: python:3.11-slim
+    container_name: defect-monitoring
+    profiles:
+      - monitoring
+    command: >
+      sh -c "pip install -r /app/monitoring/requirements.txt &&
+             python /app/monitoring/dashboard.py"
+    volumes:
+      - ./monitoring:/app/monitoring
+      - ./checkpoints:/app/checkpoints
+    ports:
+      - "8501:8501"
+    depends_on:
+      - api
+    restart: unless-stopped

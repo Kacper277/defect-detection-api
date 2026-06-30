@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+.env
+.env.*
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+*.whl
+
+# Logs and runtime files
+*.log
+*.pot
+*.py[cod]
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE/editor settings
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# PyTorch / ML artifacts
+*.pth
+*.pt
+*.ckpt
+
+# Data and checkpoints
+data/
+checkpoints/
+
+# Docker
+docker-compose.override.yml
+
+# Misc
+*.swp
+*.bak
+*~

@@ -1,0 +1,13 @@
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.git/
+*.pth
+.DS_Store
+data/
+tmp/
+tests/
+*.md
+*.txt
+!requirements.txt

@@ -1,0 +1,77 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: defect-detection-api
+  labels:
+    app: defect-detection-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: defect-detection-api
+  template:
+    metadata:
+      labels:
+        app: defect-detection-api
+    spec:
+      containers:
+      - name: api
+        image: defectdetectionacr.azurecr.io/defect-api:v1
+        ports:
+        - containerPort: 8000
+        env:
+        - name: DEVICE
+          value: "cpu"
+        - name: PYTHONPATH
+          value: "/app"
+        resources:
+          requests:
+            cpu: "1"
+            memory: "2Gi"
+          limits:
+            cpu: "2"
+            memory: "4Gi"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: defect-detection-api-service
+spec:
+  type: LoadBalancer
+  selector:
+    app: defect-detection-api
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 8000
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: defect-detection-api-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: defect-detection-api
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
