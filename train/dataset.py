@@ -1,5 +1,5 @@
 """
-PyTorch Dataset dla NEU-DET z augmentacją OpenCV/Albumentations.
+PyTorch Dataset for NEU-DET with OpenCV/Albumentations augmentations.
 """
 import cv2
 import numpy as np
@@ -25,33 +25,33 @@ from train.config import (
 
 
 def get_train_transforms() -> A.Compose:
-    """Augmentacje dla zbioru treningowego."""
+    """Augmentations for the training set."""
     return A.Compose([
-        # 1. Losowa rotacja ±30°
+        # 1. Random rotation ±30°
         A.Rotate(limit=30, p=AUGMENTATION_PROB),
-        # 2. Losowe odbicie poziome i pionowe
+        # 2. Random horizontal and vertical flip
         A.HorizontalFlip(p=AUGMENTATION_PROB),
         A.VerticalFlip(p=0.2),
-        # 3. Losowa zmiana jasności i kontrastu
+        # 3. Random brightness and contrast
         A.RandomBrightnessContrast(
             brightness_limit=0.2,
             contrast_limit=0.2,
             p=AUGMENTATION_PROB,
         ),
-        # 4. Szum Gaussian
+        # 4. Gaussian noise
         A.GaussNoise(var_limit=(10.0, 50.0), p=0.3),
-        # 5. Rozmycie (symulacja nieostrości)
+        # 5. Blur (simulates lack of focus)
         A.Blur(blur_limit=3, p=0.2),
-        # 6. Skalowanie do stałego rozmiaru
+        # 6. Resize to fixed size
         A.Resize(IMG_SIZE, IMG_SIZE),
-        # 7. Normalizacja (ImageNet) + konwersja do tensora
+        # 7. Normalization (ImageNet) + tensor conversion
         A.Normalize(mean=MEAN, std=STD),
         ToTensorV2(),
     ])
 
 
 def get_val_transforms() -> A.Compose:
-    """Tylko resize + normalizacja dla walidacji/testu."""
+    """Only resize + normalization for validation/test."""
     return A.Compose([
         A.Resize(IMG_SIZE, IMG_SIZE),
         A.Normalize(mean=MEAN, std=STD),
@@ -61,7 +61,7 @@ def get_val_transforms() -> A.Compose:
 
 class NEUDETDataset(Dataset):
     """
-    Dataset ładujący obrazy NEU-DET ze struktury katalogów:
+    Dataset loading NEU-DET images from directory structure:
     data/neu-det/{train,validation}/images/{class_name}/*.jpg
     """
 
@@ -72,27 +72,27 @@ class NEUDETDataset(Dataset):
     ):
         """
         Args:
-            split: "train" lub "validation"
-            transforms: kompozycja augmentacji Albumentations
+            split: "train" or "validation"
+            transforms: Albumentations augmentation composition
         """
         self.split = split
         self.transforms = transforms or (get_train_transforms() if split == "train" else get_val_transforms())
 
         self.image_dir = DATA_DIR / split / "images"
-        self.samples: list[tuple[str, int]] = []  # (ścieżka, label)
+        self.samples: list[tuple[str, int]] = []  # (path, label)
 
-        # Skanuj katalogi klas
+        # Scan class directories
         for class_name in CLASSES:
             class_dir = self.image_dir / class_name
             if not class_dir.exists():
-                print(f"  [WARN] Brak katalogu: {class_dir}")
+                print(f"  [WARN] Directory missing: {class_dir}")
                 continue
 
             label = CLASS_TO_IDX[class_name]
             for img_path in sorted(class_dir.glob("*.jpg")):
                 self.samples.append((str(img_path), label))
 
-        print(f"  Załadowano {len(self.samples)} obrazów dla split='{split}'")
+        print(f"  Loaded {len(self.samples)} images for split='{split}'")
 
     def __len__(self) -> int:
         return len(self.samples)
@@ -100,18 +100,18 @@ class NEUDETDataset(Dataset):
     def __getitem__(self, idx: int) -> tuple[torch.Tensor, int]:
         img_path, label = self.samples[idx]
 
-        # Wczytaj obraz za pomocą OpenCV (BGR -> RGB)
+        # Load image with OpenCV (BGR -> RGB)
         img = cv2.imread(img_path)
         if img is None:
-            raise FileNotFoundError(f"Nie można wczytać obrazu: {img_path}")
+            raise FileNotFoundError(f"Cannot load image: {img_path}")
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-        # Augmentacja
+        # Augmentation
         if self.transforms:
             augmented = self.transforms(image=img)
             img_tensor = augmented["image"]
         else:
-            # Fallback: ręczna konwersja
+            # Fallback: manual conversion
             img = cv2.resize(img, (IMG_SIZE, IMG_SIZE))
             img_tensor = torch.from_numpy(img.transpose(2, 0, 1)).float() / 255.0
 
@@ -119,8 +119,8 @@ class NEUDETDataset(Dataset):
 
 
 def get_dataloaders() -> tuple[DataLoader, DataLoader]:
-    """Zwraca DataLoadery dla treningu i walidacji."""
-    print("Przygotowywanie DataLoaderów...")
+    """Returns DataLoaders for training and validation."""
+    print("Preparing DataLoaders...")
 
     train_dataset = NEUDETDataset(split="train", transforms=get_train_transforms())
     val_dataset = NEUDETDataset(split="validation", transforms=get_val_transforms())
@@ -145,13 +145,13 @@ def get_dataloaders() -> tuple[DataLoader, DataLoader]:
 
 
 if __name__ == "__main__":
-    # Test: załaduj i wyświetl statystyki
+    # Test: load and display statistics
     train_loader, val_loader = get_dataloaders()
 
-    print(f"\nBatch train: {len(train_loader)} batchów po {BATCH_SIZE}")
-    print(f"Batch val:   {len(val_loader)} batchów po {BATCH_SIZE}")
+    print(f"\nTrain batches: {len(train_loader)} batches of {BATCH_SIZE}")
+    print(f"Val batches:   {len(val_loader)} batches of {BATCH_SIZE}")
 
-    # Pokaż przykładowy batch
+    # Show sample batch
     images, labels = next(iter(train_loader))
     print(f"\nTensor shape: {images.shape}")     # [B, 3, 224, 224]
     print(f"Label shape:  {labels.shape}")       # [B]

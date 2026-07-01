@@ -1,5 +1,5 @@
 """
-Ładowanie wytrenowanego modelu i Grad-CAM.
+Loads trained model and Grad-CAM.
 """
 import sys
 from pathlib import Path
@@ -13,7 +13,7 @@ import torch.nn.functional as F
 import torchvision.models as models
 from torchvision.transforms import Compose, Resize, ToTensor, Normalize, ToPILImage
 
-# Dodaj katalog główny do ścieżki
+# Add root directory to path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
@@ -30,7 +30,7 @@ from train.config import (
 
 class GradCAM:
     """
-    Grad-CAM: wizualizacja aktywacji modelu dla danej klasy.
+    Grad-CAM: visualizes model activations for a given class.
     """
 
     def __init__(self, model: nn.Module, target_layer: nn.Module):
@@ -41,7 +41,7 @@ class GradCAM:
         self._register_hooks()
 
     def _register_hooks(self):
-        """Rejestruje hooki do przechwytywania gradientów i aktywacji."""
+        """Registers hooks for capturing gradients and activations."""
 
         def forward_hook(module, input, output):
             self.activations = output
@@ -54,14 +54,14 @@ class GradCAM:
 
     def generate(self, x: torch.Tensor, class_idx: Optional[int] = None) -> np.ndarray:
         """
-        Generuje heatmapę Grad-CAM.
+        Generates Grad-CAM heatmap.
 
         Args:
-            x: tensor obrazu [1, 3, H, W] (po normalizacji)
-            class_idx: indeks klasy target. Jeśli None, używa argmax.
+            x: image tensor [1, 3, H, W] (after normalization)
+            class_idx: target class index. If None, uses argmax.
 
         Returns:
-            heatmapa jako np.ndarray [H, W] w zakresie [0, 1]
+            heatmap as np.ndarray [H, W] in range [0, 1]
         """
         # Forward pass
         self.model.zero_grad()
@@ -70,41 +70,41 @@ class GradCAM:
         if class_idx is None:
             class_idx = output.argmax(dim=1).item()
 
-        # Backward pass dla wybranej klasy
+        # Backward pass for selected class
         one_hot = torch.zeros_like(output)
         one_hot[0, class_idx] = 1
         output.backward(gradient=one_hot, retain_graph=True)
 
-        # Pobierz gradienty i aktywacje
+        # Get gradients and activations
         gradients = self.gradients.detach()  # [1, C, H, W]
         activations = self.activations.detach()  # [1, C, H, W]
 
-        # Global Average Pooling na gradientach
+        # Global Average Pooling on gradients
         weights = gradients.mean(dim=(2, 3), keepdim=True)  # [1, C, 1, 1]
 
-        # Ważona suma aktywacji
+        # Weighted sum of activations
         cam = (weights * activations).sum(dim=1, keepdim=True)  # [1, 1, H, W]
-        cam = F.relu(cam)  # tylko pozytywne aktywacje
+        cam = F.relu(cam)  # only positive activations
 
-        # Normalizacja do [0, 1]
+        # Normalize to [0, 1]
         cam = cam.squeeze().cpu().numpy()
         cam = (cam - cam.min()) / (cam.max() - cam.min() + 1e-8)
 
-        # Resize do oryginalnego rozmiaru
+        # Resize to original size
         cam = cv2.resize(cam, (IMG_SIZE, IMG_SIZE))
         return cam
 
 
 class ModelService:
     """
-    Serwis do ładowania modelu i wykonywania predykcji.
+    Service for loading model and performing predictions.
     """
 
     def __init__(self, checkpoint_path: Optional[Path] = None):
         self.device = torch.device(DEVICE)
         self.classes = CLASSES
 
-        # Transformacje dla obrazu wejściowego
+        # Transforms for input image
         self.transform = Compose([
             ToPILImage(),
             Resize((IMG_SIZE, IMG_SIZE)),
@@ -112,28 +112,28 @@ class ModelService:
             Normalize(mean=MEAN, std=STD),
         ])
 
-        # Załaduj model
+        # Load model
         self.model = self._load_model(checkpoint_path)
         self.model.eval()
 
-        # Grad-CAM na layer4 (ostatni blok konwolucyjny ResNet)
+        # Grad-CAM on layer4 (last convolutional block of ResNet)
         self.gradcam = GradCAM(self.model, self.model.layer4)
 
-        print(f"ModelService: model załadowany na {self.device}")
-        print(f"  Klasy: {self.classes}")
+        print(f"ModelService: model loaded on {self.device}")
+        print(f"  Classes: {self.classes}")
 
     def _load_model(self, checkpoint_path: Optional[Path] = None) -> nn.Module:
-        """Ładuje checkpoint modelu."""
+        """Loads model checkpoint."""
         if checkpoint_path is None:
             checkpoint_path = CHECKPOINT_DIR / "best_model.pth"
 
         if not checkpoint_path.exists():
             raise FileNotFoundError(
-                f"Checkpoint nie znaleziony: {checkpoint_path}\n"
-                f"Uruchom najpierw trening: python -m train.train"
+                f"Checkpoint not found: {checkpoint_path}\n"
+                f"Run training first: python -m train.train"
             )
 
-        # Zbuduj model
+        # Build model
         model = models.resnet18(weights=None)
         in_features = model.fc.in_features
         model.fc = nn.Sequential(
@@ -141,30 +141,30 @@ class ModelService:
             nn.Linear(in_features, NUM_CLASSES),
         )
 
-        # Wczytaj wagi
+        # Load weights
         checkpoint = torch.load(checkpoint_path, map_location=self.device)
         model.load_state_dict(checkpoint["model_state_dict"])
         model = model.to(self.device)
 
-        print(f"  Załadowano checkpoint z epoch {checkpoint.get('epoch', '?')}, "
+        print(f"  Loaded checkpoint from epoch {checkpoint.get('epoch', '?')}, "
               f"F1={checkpoint.get('val_f1', '?'):.4f}")
 
         return model
 
     def predict(self, image: np.ndarray) -> dict:
         """
-        Wykonuje predykcję dla obrazu.
+        Performs prediction for an image.
 
         Args:
-            image: obraz w formacie RGB (OpenCV) jako np.ndarray [H, W, 3]
+            image: RGB image (OpenCV) as np.ndarray [H, W, 3]
 
         Returns:
-            dict z predykcją, pewnością i heatmapą
+            dict with prediction, confidence and heatmap
         """
         # Preprocessing
         input_tensor = self.transform(image).unsqueeze(0).to(self.device)
 
-        # Predykcja
+        # Prediction
         with torch.no_grad():
             output = self.model(input_tensor)
             probs = F.softmax(output, dim=1)
@@ -172,7 +172,7 @@ class ModelService:
         predicted_class = output.argmax(dim=1).item()
         confidence = probs[0, predicted_class].item()
 
-        # Wszystkie prawdopodobieństwa
+        # All probabilities
         all_probs = probs[0].cpu().numpy().tolist()
 
         # Grad-CAM
@@ -194,30 +194,30 @@ class ModelService:
 
     def predict_bytes(self, image_bytes: bytes) -> dict:
         """
-        Wykonuje predykcję dla obrazu w postaci bajtów.
+        Performs prediction for image bytes.
 
         Args:
-            image_bytes: surowe bajty obrazu (JPEG, PNG, itp.)
+            image_bytes: raw image bytes (JPEG, PNG, etc.)
 
         Returns:
-            dict z predykcją
+            dict with prediction
         """
-        # Dekoduj obraz
+        # Decode image
         image_array = np.frombuffer(image_bytes, np.uint8)
         image = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
         if image is None:
-            raise ValueError("Nie można zdekodować obrazu. Upewnij się, że przesłano poprawny plik graficzny.")
+            raise ValueError("Unable to decode image. Make sure a valid image file was uploaded.")
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
         return self.predict(image)
 
 
-# Singleton serwisu
+# Singleton service
 _service: Optional[ModelService] = None
 
 
 def get_model_service() -> ModelService:
-    """Zwraca singleton ModelService."""
+    """Returns the singleton ModelService."""
     global _service
     if _service is None:
         _service = ModelService()
@@ -229,14 +229,14 @@ if __name__ == "__main__":
     service = get_model_service()
     print(f"Service ready: {service.classes}")
 
-    # Test na obrazie z datasetu
+    # Test on dataset image
     test_img_path = ROOT / "data" / "neu-det" / "validation" / "images" / "crazing" / "crazing_241.jpg"
     if test_img_path.exists():
         img = cv2.imread(str(test_img_path))
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         result = service.predict(img)
-        print(f"Predykcja: {result['predicted_class']} ({result['confidence']:.2%})")
+        print(f"Prediction: {result['predicted_class']} ({result['confidence']:.2%})")
         print(f"Probabilities: {result['all_probabilities']}")
         print(f"Heatmap shape: {result['heatmap_shape']}")
     else:
-        print("Brak obrazu testowego")
+        print("No test image found")

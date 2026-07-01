@@ -1,10 +1,10 @@
 """
-FastAPI REST API dla detekcji wad produkcyjnych.
+FastAPI REST API for production defect detection.
 
 Endpoints:
-- POST /predict: przyjmuje obraz, zwraca predykcję + opcjonalnie heatmapę Grad-CAM
+- POST /predict: accepts an image, returns prediction + optional Grad-CAM heatmap
 - GET /health: health check
-- GET /classes: lista klas
+- GET /classes: list of classes
 """
 import io
 import sys
@@ -17,7 +17,7 @@ from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel
 
-# Dodaj katalog główny do ścieżki
+# Add root directory to path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
@@ -26,8 +26,8 @@ from monitoring.data_drift import log_prediction, detect_drift
 
 app = FastAPI(
     title="Defect Detection API",
-    description="API do detekcji wad produkcyjnych na obrazach (NEU-DET). "
-                "Wykorzystuje ResNet-18 + Grad-CAM.",
+    description="API for production defect detection on images (NEU-DET). "
+                "Uses ResNet-18 + Grad-CAM.",
     version="1.0.0",
 )
 
@@ -40,7 +40,7 @@ class PredictResponse(BaseModel):
     confidence: float
     all_probabilities: dict[str, float]
     heatmap_shape: list[int]
-    heatmap: Optional[list[list[float]]] = None  # ← teraz opcjonalna
+    heatmap: Optional[list[list[float]]] = None  # now optional
 
 
 class HealthResponse(BaseModel):
@@ -51,24 +51,24 @@ class HealthResponse(BaseModel):
 
 @app.on_event("startup")
 def startup():
-    """Inicjalizacja modelu przy starcie."""
-    print("Ładowanie modelu...")
+    """Initialize model on startup."""
+    print("Loading model...")
     try:
         get_model_service()
-        print("Model załadowany pomyślnie!")
+        print("Model loaded successfully!")
     except Exception as e:
-        print(f"BŁĄD ładowania modelu: {e}")
+        print(f"ERROR loading model: {e}")
 
 
 @app.get("/", include_in_schema=False)
 async def root():
-    """Przekierowuje do dokumentacji Swagger UI"""
+    """Redirects to Swagger UI documentation"""
     return RedirectResponse(url="/docs")
 
 
 @app.get("/health", response_model=HealthResponse)
 def health_check():
-    """Sprawdzenie stanu API i modelu."""
+    """Check API and model status."""
     try:
         service = get_model_service()
         model_loaded = True
@@ -86,63 +86,63 @@ def health_check():
 
 @app.get("/classes")
 def get_classes():
-    """Zwraca listę klas wykrywanych defektów."""
+    """Returns list of detectable defect classes."""
     try:
         service = get_model_service()
         return {"classes": service.classes, "count": len(service.classes)}
     except Exception as e:
-        raise HTTPException(status_code=503, detail=f"Model nie załadowany: {e}")
+        raise HTTPException(status_code=503, detail=f"Model not loaded: {e}")
 
 
 @app.post("/predict", response_model=PredictResponse)
 async def predict(
     file: UploadFile = File(...),
-    include_heatmap: bool = False,  # ← teraz domyślnie False – szybciej
+    include_heatmap: bool = False,  # default False – faster
 ):
     """
-    Wykonuje predykcję defektu na przesłanym obrazie.
+    Performs defect prediction on uploaded image.
 
     Args:
-        file: obraz w formacie JPEG, PNG, BMP, TIFF
-        include_heatmap: czy zwrócić heatmapę Grad-CAM (duża odpowiedź!)
+        file: image in JPEG, PNG, BMP, TIFF format
+        include_heatmap: whether to return Grad-CAM heatmap (large response!)
 
     Returns:
-        predicted_class: nazwa wykrytego defektu
-        confidence: pewność predykcji (0-1)
-        all_probabilities: prawdopodobieństwa dla wszystkich klas
-        heatmap: (opcjonalnie) macierz 224x224 z wartościami aktywacji
+        predicted_class: name of detected defect
+        confidence: prediction confidence (0-1)
+        all_probabilities: probabilities for all classes
+        heatmap: (optional) 224x224 matrix of activation values
     """
-    # Walidacja pliku
+    # File validation
     if file.content_type and not file.content_type.startswith("image/"):
         raise HTTPException(
             status_code=400,
-            detail=f"Nieobsługiwany typ pliku: {file.content_type}. Oczekiwano obrazu.",
+            detail=f"Unsupported file type: {file.content_type}. Expected an image.",
         )
 
-    # Wczytaj obraz
+    # Load image
     contents = await file.read()
     if len(contents) > MAX_IMAGE_SIZE:
         raise HTTPException(
             status_code=413,
-            detail=f"Plik zbyt duży ({len(contents)} bytes). Maksymalny rozmiar: {MAX_IMAGE_SIZE} bytes.",
+            detail=f"File too large ({len(contents)} bytes). Maximum size: {MAX_IMAGE_SIZE} bytes.",
         )
 
     if len(contents) < 100:
         raise HTTPException(
             status_code=400,
-            detail="Przesłany plik jest pusty lub zbyt mały.",
+            detail="Uploaded file is empty or too small.",
         )
 
-    # Wykonaj predykcję
+    # Perform prediction
     try:
         service = get_model_service()
         result = service.predict_bytes(contents)
 
-        # Monitoring: loguj predykcję i wykrywaj dryf
+        # Monitoring: log prediction and detect drift
         try:
             log_prediction(result, contents)
             drift = detect_drift({
-                "mean_pixel": result.get("_mean_pixel", 128),  # ← teraz działa
+                "mean_pixel": result.get("_mean_pixel", 128),  # now works
                 "confidence": result["confidence"]
             })
             if drift.get("drift_detected"):
@@ -150,7 +150,7 @@ async def predict(
         except Exception as e:
             print(f"[MONITORING WARN] {e}")
 
-        # Przygotuj odpowiedź
+        # Prepare response
         response = {
             "predicted_class": result["predicted_class"],
             "predicted_index": result["predicted_index"],
@@ -159,7 +159,7 @@ async def predict(
             "heatmap_shape": list(result["heatmap_shape"]),
         }
 
-        # Warunkowe dołączanie heatmapy
+        # Conditional heatmap inclusion
         if include_heatmap:
             response["heatmap"] = result["heatmap"]
 
@@ -170,19 +170,19 @@ async def predict(
     except FileNotFoundError as e:
         raise HTTPException(
             status_code=503,
-            detail=f"Model nie został wytrenowany. {e}",
+            detail=f"Model not trained. {e}",
         )
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=f"Błąd podczas predykcji: {str(e)}",
+            detail=f"Prediction error: {str(e)}",
         )
 
 
 @app.post("/predict/with-heatmap-image")
 async def predict_with_heatmap_image(file: UploadFile = File(...)):
     """
-    Wykonuje predykcję i zwraca obraz z nałożoną heatmapą Grad-CAM.
+    Performs prediction and returns image with Grad-CAM heatmap overlay.
     """
     contents = await file.read()
 
@@ -190,30 +190,30 @@ async def predict_with_heatmap_image(file: UploadFile = File(...)):
         service = get_model_service()
         result = service.predict_bytes(contents)
 
-        # Pobierz oryginalny obraz
+        # Get original image
         image_array = np.frombuffer(contents, np.uint8)
         original = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
 
-        # Przygotuj wizualizację: heatmapa na oryginalnym obrazie
+        # Prepare visualization: heatmap on original image
         heatmap = np.array(result["heatmap"], dtype=np.float32)
         heatmap_norm = cv2.normalize(heatmap, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U)
         heatmap_colored = cv2.applyColorMap(heatmap_norm, cv2.COLORMAP_JET)
 
-        # Zmień rozmiar heatmapy do rozmiaru oryginalnego obrazu
+        # Resize heatmap to original image size
         h, w = original.shape[:2]
         heatmap_resized = cv2.resize(heatmap_colored, (w, h))
 
-        # Nałóż heatmapę na oryginał
+        # Overlay heatmap on original
         overlay = cv2.addWeighted(original, 0.6, heatmap_resized, 0.4, 0)
 
-        # Dodaj etykietę
+        # Add label
         label = f"{result['predicted_class']} ({result['confidence']:.1%})"
         cv2.putText(
             overlay, label, (10, 30),
             cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2,
         )
 
-        # Zwróć jako JPEG
+        # Return as JPEG
         _, buffer = cv2.imencode(".jpg", overlay, [cv2.IMWRITE_JPEG_QUALITY, 90])
         return Response(content=buffer.tobytes(), media_type="image/jpeg")
 

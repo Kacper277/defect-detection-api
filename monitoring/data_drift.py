@@ -1,8 +1,8 @@
 """
-Monitorowanie dryfu danych (data drift) dla API.
+Data drift monitoring for the API.
 
-Rejestruje statystyki rozkładu predykcji i cech wejściowych,
-porównując je z bazowym rozkładem z treningu.
+Records prediction distribution statistics and input features,
+comparing them with the baseline distribution from training.
 """
 import json
 import time
@@ -25,13 +25,13 @@ BASELINE_FILE = CHECKPOINT_DIR / "baseline_distribution.json"
 
 def compute_image_stats(image_bytes: bytes) -> dict:
     """
-    Oblicza statystyki obrazu wejściowego dla monitoringu dryfu.
+    Computes input image statistics for drift monitoring.
 
     Args:
-        image_bytes: surowe bajty obrazu
+        image_bytes: raw image bytes
 
     Returns:
-        dict z: średnia, std, histogram (16 binów), rozmiar, hash
+        dict with: mean, std, histogram (16 bins), size, hash
     """
     import cv2
     import numpy as np
@@ -41,7 +41,7 @@ def compute_image_stats(image_bytes: bytes) -> dict:
     if img is None:
         return {}
 
-    # Statystyki podstawowe
+    # Basic statistics
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     hist = cv2.calcHist([gray], [0], None, [16], [0, 256]).flatten().tolist()
 
@@ -60,7 +60,7 @@ def compute_image_stats(image_bytes: bytes) -> dict:
 
 def log_prediction(result: dict, image_bytes: bytes):
     """
-    Zapisuje pojedynczą predykcję do dziennika monitoringu.
+    Saves a single prediction to the monitoring log.
     """
     LOG_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -72,11 +72,11 @@ def log_prediction(result: dict, image_bytes: bytes):
         "probabilities": result["all_probabilities"],
     }
 
-    # Dodaj statystyki obrazu
+    # Add image statistics
     img_stats = compute_image_stats(image_bytes)
     log_entry.update(img_stats)
 
-    # Log rotacyjny: zapisz do pliku JSONL (jeden JSON na linię)
+    # Rotating log: save to JSONL file (one JSON per line)
     log_file = LOG_DIR / f"predictions_{datetime.utcnow().strftime('%Y%m')}.jsonl"
     with open(log_file, "a") as f:
         f.write(json.dumps(log_entry) + "\n")
@@ -86,10 +86,10 @@ def log_prediction(result: dict, image_bytes: bytes):
 
 def compute_baseline():
     """
-    Oblicza bazowy rozkład z danych treningowych.
-    Uruchom raz po treningu.
+    Computes baseline distribution from training data.
+    Run once after training.
     """
-    print("Obliczanie baseline distribution z danych treningowych...")
+    print("Computing baseline distribution from training data...")
 
     import cv2
     from pathlib import Path
@@ -103,7 +103,7 @@ def compute_baseline():
         if not class_dir.exists():
             continue
 
-        for img_path in list(class_dir.glob("*.jpg"))[:50]:  # 50 na klasę = 300 obrazów
+        for img_path in list(class_dir.glob("*.jpg"))[:50]:  # 50 per class = 300 images
             img = cv2.imread(str(img_path), cv2.IMREAD_GRAYSCALE)
             if img is None:
                 continue
@@ -126,22 +126,22 @@ def compute_baseline():
     with open(BASELINE_FILE, "w") as f:
         json.dump(baseline, f, indent=2)
 
-    print(f"Baseline zapisany do {BASELINE_FILE}")
-    print(f"  Próbki: {baseline['n_samples']}")
-    print(f"  Średnia pixeli: {baseline['mean_mean']:.2f} ± {baseline['mean_std']:.2f}")
+    print(f"Baseline saved to {BASELINE_FILE}")
+    print(f"  Samples: {baseline['n_samples']}")
+    print(f"  Pixel mean: {baseline['mean_mean']:.2f} ± {baseline['mean_std']:.2f}")
     return baseline
 
 
 def detect_drift(stats: dict, threshold: float = 0.05) -> dict:
     """
-    Wykrywa dryf danych przez porównanie z baseline.
+    Detects data drift by comparing with baseline.
 
     Args:
-        stats: statystyki obrazu (z compute_image_stats)
-        threshold: próg p-value dla testu KS
+        stats: image statistics (from compute_image_stats)
+        threshold: p-value threshold for KS test
 
     Returns:
-        dict z wynikami detekcji dryfu
+        dict with drift detection results
     """
     if not BASELINE_FILE.exists():
         return {"drift_detected": False, "reason": "No baseline available"}
@@ -149,10 +149,10 @@ def detect_drift(stats: dict, threshold: float = 0.05) -> dict:
     with open(BASELINE_FILE) as f:
         baseline = json.load(f)
 
-    # Test K-S na średniej pixeli
+    # K-S test on pixel mean
     z_score = (stats["mean_pixel"] - baseline["mean_mean"]) / (baseline["mean_std"] + 1e-8)
 
-    # Prosty test: jeśli mean odbiega > 3 sigma, mamy dryf
+    # Simple test: if mean deviates > 3 sigma, we have drift
     drift_mean = abs(z_score) > 3.0
     drift_confidence = stats["confidence"] < 0.5
 
@@ -168,7 +168,7 @@ def detect_drift(stats: dict, threshold: float = 0.05) -> dict:
     }
 
     if drift_detected:
-        # Zapisz alert
+        # Save alert
         alerts_file = LOG_DIR / "drift_alerts.jsonl"
         with open(alerts_file, "a") as f:
             f.write(json.dumps(result) + "\n")
@@ -178,13 +178,13 @@ def detect_drift(stats: dict, threshold: float = 0.05) -> dict:
 
 def generate_report(n_last: int = 100) -> dict:
     """
-    Generuje raport z ostatnich N predykcji.
+    Generates report from last N predictions.
     """
     log_files = sorted(LOG_DIR.glob("predictions_*.jsonl"))
     if not log_files:
-        return {"error": "Brak danych monitoringu"}
+        return {"error": "No monitoring data"}
 
-    # Wczytaj ostatnie N wpisów
+    # Load last N entries
     records = []
     for log_file in reversed(log_files):
         with open(log_file) as f:
@@ -196,9 +196,9 @@ def generate_report(n_last: int = 100) -> dict:
     records = records[-n_last:]
 
     if not records:
-        return {"error": "Brak danych"}
+        return {"error": "No data"}
 
-    # Statystyki
+    # Statistics
     classes = [r["predicted_class"] for r in records]
     confidences = [r["confidence"] for r in records]
     means = [r["mean_pixel"] for r in records if "mean_pixel" in r]
@@ -223,12 +223,12 @@ def generate_report(n_last: int = 100) -> dict:
 
 
 if __name__ == "__main__":
-    # Test: oblicz baseline
+    # Test: compute baseline
     if not BASELINE_FILE.exists():
         compute_baseline()
     else:
-        print(f"Baseline już istnieje: {BASELINE_FILE}")
+        print(f"Baseline already exists: {BASELINE_FILE}")
 
-    # Test: wygeneruj raport
+    # Test: generate report
     report = generate_report()
-    print(f"\nRaport monitoringu: {json.dumps(report, indent=2)}")
+    print(f"\nMonitoring report: {json.dumps(report, indent=2)}")

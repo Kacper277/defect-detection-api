@@ -1,5 +1,5 @@
 """
-Trenowanie ResNet-18 na NEU-DET z walidacją, metrykami i checkpointem.
+Training ResNet-18 on NEU-DET with validation, metrics and checkpointing.
 """
 import os
 import sys
@@ -20,7 +20,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
-# Dodajemy katalog główny do ścieżki
+# Add root directory to path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from train.config import (
@@ -50,18 +50,18 @@ def set_seed(seed: int = SEED):
 
 # ---------- Model ----------
 def build_model(num_classes: int = NUM_CLASSES) -> nn.Module:
-    """Załaduj pretrained ResNet-18 i dostosuj klasyfikator."""
+    """Load pretrained ResNet-18 and adapt classifier."""
     model = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1)
 
-    # Zamroź wcześniejsze warstwy (fine-tuning tylko klasyfikatora)
+    # Freeze earlier layers (fine-tune only classifier)
     for param in model.parameters():
         param.requires_grad = False
 
-    # Odblokuj ostatni blok (warstwy 4 i 5)
+    # Unfreeze last block (layer4)
     for param in model.layer4.parameters():
         param.requires_grad = True
 
-    # Zamień ostatnią warstwę fc na 6 klas
+    # Replace final fc layer for 6 classes
     in_features = model.fc.in_features
     model.fc = nn.Sequential(
         nn.Dropout(0.3),
@@ -71,7 +71,7 @@ def build_model(num_classes: int = NUM_CLASSES) -> nn.Module:
     return model
 
 
-# ---------- Trening ----------
+# ---------- Training ----------
 def train_one_epoch(
     model: nn.Module,
     loader: DataLoader,
@@ -79,7 +79,7 @@ def train_one_epoch(
     optimizer: optim.Optimizer,
     device: torch.device,
 ) -> tuple[float, float]:
-    """Pojedyncza epoka treningowa."""
+    """Single training epoch."""
     model.train()
     running_loss = 0.0
     all_preds, all_labels = [], []
@@ -115,7 +115,7 @@ def validate(
     criterion: nn.Module,
     device: torch.device,
 ) -> tuple[float, float, float, np.ndarray, np.ndarray]:
-    """Walidacja modelu."""
+    """Model validation."""
     model.eval()
     running_loss = 0.0
     all_preds, all_labels = [], []
@@ -137,7 +137,7 @@ def validate(
     return val_loss, val_acc, val_f1, np.array(all_labels), np.array(all_preds)
 
 
-# ---------- Wykresy ----------
+# ---------- Plots ----------
 def plot_metrics(
     train_losses: list[float],
     val_losses: list[float],
@@ -145,7 +145,7 @@ def plot_metrics(
     val_accs: list[float],
     save_dir: Path,
 ):
-    """Zapisz wykresy loss i accuracy."""
+    """Save loss and accuracy plots."""
     epochs = range(1, len(train_losses) + 1)
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
@@ -170,21 +170,21 @@ def plot_metrics(
 
     plt.tight_layout()
     plt.savefig(save_dir / "training_metrics.png", dpi=150)
-    print(f"  Wykresy zapisane do {save_dir / 'training_metrics.png'}")
+    print(f"  Plots saved to {save_dir / 'training_metrics.png'}")
     plt.close()
 
 
-# ---------- Główna pętla ----------
+# ---------- Main loop ----------
 def main():
     set_seed()
     device = torch.device(DEVICE)
     print(f"Device: {device}")
-    print(f"Liczba klas: {NUM_CLASSES} -> {CLASSES}")
+    print(f"Number of classes: {NUM_CLASSES} -> {CLASSES}")
 
-    # Przygotuj katalog checkpointów
+    # Prepare checkpoint directory
     CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
 
-    # DataLoadery
+    # DataLoaders
     train_loader, val_loader = get_dataloaders()
 
     # Model
@@ -193,9 +193,9 @@ def main():
 
     total_params = sum(p.numel() for p in model.parameters())
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"Parametry: {total_params:,} total, {trainable_params:,} trainable")
+    print(f"Parameters: {total_params:,} total, {trainable_params:,} trainable")
 
-    # Loss i optimizer
+    # Loss and optimizer
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.AdamW(
         filter(lambda p: p.requires_grad, model.parameters()),
@@ -206,7 +206,7 @@ def main():
         optimizer, mode="min", factor=0.5, patience=3
     )
 
-    # Historia
+    # History
     train_losses, val_losses = [], []
     train_accs, val_accs = [], []
     best_val_f1 = 0.0
@@ -215,20 +215,20 @@ def main():
     early_stop_patience = 7
 
     print(f"\n{'='*60}")
-    print(f"Rozpoczynanie treningu na {EPOCHS} epok")
+    print(f"Starting training for {EPOCHS} epochs")
     print(f"{'='*60}")
 
     for epoch in range(1, EPOCHS + 1):
         print(f"\nEpoch {epoch}/{EPOCHS}")
 
-        # Trening
+        # Training
         train_loss, train_acc, train_f1 = train_one_epoch(
             model, train_loader, criterion, optimizer, device
         )
         train_losses.append(train_loss)
         train_accs.append(train_acc)
 
-        # Walidacja
+        # Validation
         val_loss, val_acc, val_f1, true_labels, preds = validate(
             model, val_loader, criterion, device
         )
@@ -260,19 +260,19 @@ def main():
                 },
                 checkpoint_path,
             )
-            print(f"  >>> Nowy najlepszy model! F1={val_f1:.4f} (epoch {epoch}) <<<")
+            print(f"  New best model! F1={val_f1:.4f} (epoch {epoch})")
             patience_counter = 0
         else:
             patience_counter += 1
             if patience_counter >= early_stop_patience:
-                print(f"\nEarly stopping po {epoch} epokach (brak poprawy F1 przez {early_stop_patience} epok)")
+                print(f"\nEarly stopping after {epoch} epochs (no F1 improvement for {early_stop_patience} epochs)")
                 break
 
     print(f"\n{'='*60}")
-    print(f"Trening zakończony. Najlepszy model: epoch {best_epoch}, F1={best_val_f1:.4f}")
+    print(f"Training finished. Best model: epoch {best_epoch}, F1={best_val_f1:.4f}")
     print(f"{'='*60}")
 
-    # Zapisz końcowe metryki
+    # Save final metrics
     metrics = {
         "best_epoch": best_epoch,
         "best_val_f1": float(best_val_f1),
@@ -285,21 +285,21 @@ def main():
     with open(CHECKPOINT_DIR / "metrics.json", "w") as f:
         json.dump(metrics, f, indent=2)
 
-    # Wykresy
+    # Plots
     plot_metrics(train_losses, val_losses, train_accs, val_accs, CHECKPOINT_DIR)
 
-    # Macierz pomyłek dla najlepszego modelu
+    # Confusion matrix for best model
     if best_epoch > 0:
         best_checkpoint = torch.load(CHECKPOINT_DIR / "best_model.pth", map_location=device)
         model.load_state_dict(best_checkpoint["model_state_dict"])
         _, _, _, true_labels, preds = validate(model, val_loader, criterion, device)
 
         cm = confusion_matrix(true_labels, preds)
-        print("\nMacierz pomyłek (validation):")
-        print(f"  Klasy: {CLASSES}")
+        print("\nConfusion matrix (validation):")
+        print(f"  Classes: {CLASSES}")
         print(f"  {cm}")
 
-        # Zapisz confusion matrix
+        # Save confusion matrix
         fig, ax = plt.subplots(figsize=(8, 6))
         im = ax.imshow(cm, interpolation="nearest", cmap=plt.cm.Blues)
         ax.set_title("Confusion Matrix - Best Model")
@@ -319,7 +319,7 @@ def main():
         plt.tight_layout()
         plt.savefig(CHECKPOINT_DIR / "confusion_matrix.png", dpi=150)
         plt.close()
-        print(f"  Macierz pomyłek zapisana do {CHECKPOINT_DIR / 'confusion_matrix.png'}")
+        print(f"  Confusion matrix saved to {CHECKPOINT_DIR / 'confusion_matrix.png'}")
 
     print("\nDone!")
 
@@ -336,6 +336,7 @@ def main():
         print("You can run it manually: python -m monitoring.data_drift")
 
     print("\nDone!")
+
 
 if __name__ == "__main__":
     main()
