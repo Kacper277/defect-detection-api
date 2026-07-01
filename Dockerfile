@@ -36,6 +36,7 @@ COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/pytho
 COPY app/ ./app/
 COPY train/config.py ./train/config.py
 COPY checkpoints/ ./checkpoints/
+COPY monitoring/ ./monitoring/
 
 # Environment variables
 ENV PYTHONPATH=/app

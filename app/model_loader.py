@@ -142,7 +142,7 @@ class ModelService:
         )
 
         # Load weights
-        checkpoint = torch.load(checkpoint_path, map_location=self.device)
+        checkpoint = torch.load(checkpoint_path, map_location=self.device, weights_only=False)
         model.load_state_dict(checkpoint["model_state_dict"])
         model = model.to(self.device)
 
@@ -190,6 +190,7 @@ class ModelService:
             },
             "heatmap": heatmap.tolist(),
             "heatmap_shape": heatmap.shape,
+            "mean_pixel": mean_pixel,
         }
 
     def predict_bytes(self, image_bytes: bytes) -> dict:
