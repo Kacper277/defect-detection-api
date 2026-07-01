@@ -323,6 +323,19 @@ def main():
 
     print("\nDone!")
 
+    # --- Automatically compute baseline for drift monitoring ---
+    print("\n" + "=" * 60)
+    print("Computing baseline distribution for drift monitoring...")
+    print("=" * 60)
+    try:
+        from monitoring.data_drift import compute_baseline
+        compute_baseline()
+        print("Baseline computed successfully.")
+    except Exception as e:
+        print(f"WARNING: Could not compute baseline: {e}")
+        print("You can run it manually: python -m monitoring.data_drift")
+
+    print("\nDone!")
 
 if __name__ == "__main__":
     main()
