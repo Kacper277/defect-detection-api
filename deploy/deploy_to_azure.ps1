@@ -17,7 +17,7 @@
 #>
 param(
     [string]$AppName = "defect-detection-api",
-    [string]$Location = "westeurope",
+    [string]$Location = "polandcentral",
     [string]$ResourceGroup = "defect-detection-rg"
 )
 
@@ -36,13 +36,15 @@ Write-Host ""
 # Step 1: Check Azure CLI
 # ---------------------------------------------------------
 Write-Host "[1/6] Checking Azure CLI..."
-$azVersion = az version --query '"azure-cli"' -o tsv 2>$null
-if (-not $azVersion) {
+$azVersionOutput = az version 2>&1
+if ($LASTEXITCODE -ne 0) {
     Write-Host "ERROR: Azure CLI not found."
     Write-Host "Install it: winget install -e --id Microsoft.AzureCLI"
     Write-Host "Then restart PowerShell and run this script again."
     exit 1
 }
+# Extract the azure-cli version from the JSON output
+$azVersion = ($azVersionOutput | ConvertFrom-Json).'azure-cli'
 Write-Host "  Azure CLI version: $azVersion"
 
 # ---------------------------------------------------------
@@ -65,7 +67,7 @@ Write-Host "  Logged in as: $account"
 # Step 3: Verify model checkpoint exists
 # ---------------------------------------------------------
 Write-Host "[3/6] Checking model checkpoint..."
-$checkpointPath = Join-Path $ProjectRoot "checkpoints" "best_model.pth"
+$checkpointPath = Join-Path $ProjectRoot "checkpoints\best_model.pth"
 if (-not (Test-Path $checkpointPath)) {
     Write-Host "WARNING: best_model.pth not found at:"
     Write-Host "  $checkpointPath"
@@ -98,39 +100,72 @@ else {
 # ---------------------------------------------------------
 # Step 5: Create App Service plan and Web App
 # ---------------------------------------------------------
-Write-Host "[5/6] Creating App Service plan (free tier)..."
+Write-Host "[5/6] Setting up App Service plan (free tier)..."
 $planName = "defect-detection-plan"
-$planExists = az appservice plan show `
-    --name $planName `
-    --resource-group $ResourceGroup `
-    --query name -o tsv 2>$null
 
-if (-not $planExists) {
+# Use 'list' instead of 'show' – never throws an error, just returns empty if missing
+$existingPlan = az appservice plan list `
+    --resource-group $ResourceGroup `
+    --query "[?name=='$planName'].name" `
+    -o tsv
+
+if ($existingPlan) {
+    Write-Host "  Already exists: $planName"
+}
+else {
+    Write-Host "  Creating: $planName (F1 Linux)..."
+    $ErrorActionPreference = "Continue"
     az appservice plan create `
         --name $planName `
         --resource-group $ResourceGroup `
         --sku F1 `
         --is-linux `
-        --output none
+        --location $Location `
+        --output none 2>&1 | Out-Null
+    $result = $LASTEXITCODE
+    $ErrorActionPreference = "Stop"
+
+    if ($result -ne 0) {
+        Write-Host "ERROR: Could not create App Service plan."
+        Write-Host "Check if:"
+        Write-Host "  - You already have a free (F1) plan in this subscription (limit: 1)"
+        Write-Host "  - The region '$Location' supports free Linux plans"
+        Write-Host "  - You have sufficient permissions"
+        exit 1
+    }
     Write-Host "  Created: $planName (F1)"
 }
-else {
-    Write-Host "  Already exists: $planName"
-}
 
+# ---------------------------------------------------------
+# Step 6: Create Web App
+# ---------------------------------------------------------
 Write-Host "[6/6] Creating and configuring Web App..."
-$webAppExists = az webapp show `
-    --name $AppName `
+
+# Wait for the plan to be fully provisioned (Azure async)
+Start-Sleep -Seconds 5
+
+$webAppExists = az webapp list `
     --resource-group $ResourceGroup `
-    --query name -o tsv 2>$null
+    --query "[?name=='$AppName'].name" `
+    -o tsv
 
 if (-not $webAppExists) {
+    Write-Host "  Creating: $AppName..."
+    $ErrorActionPreference = "Continue"
     az webapp create `
         --name $AppName `
         --resource-group $ResourceGroup `
         --plan $planName `
         --runtime "PYTHON:3.11" `
-        --output none
+        --output none 2>&1 | Out-Null
+    $result = $LASTEXITCODE
+    $ErrorActionPreference = "Stop"
+
+    if ($result -ne 0) {
+        Write-Host "ERROR: Could not create Web App."
+        Write-Host "Try a different app name (must be globally unique)."
+        exit 1
+    }
     Write-Host "  Created: $AppName"
 }
 else {
@@ -144,7 +179,7 @@ az webapp config set `
     --resource-group $ResourceGroup `
     --startup-file "startup.sh" `
     --always-on false `
-    --output none
+    --output none 2>$null
 
 az webapp config appsettings set `
     --name $AppName `
@@ -153,7 +188,7 @@ az webapp config appsettings set `
         PYTHONPATH="/home/site/wwwroot" `
         DEVICE="cpu" `
         PYTHONUNBUFFERED="1" `
-    --output none
+    --output none 2>$null
 
 # ---------------------------------------------------------
 # Deploy code

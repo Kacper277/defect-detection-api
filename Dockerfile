@@ -1,14 +1,17 @@
 # Multi-stage build for Defect Detection API
 # Stage 1: Builder
-FROM python:3.11-slim AS builder
+FROM python:3.11 AS builder
 
 WORKDIR /app
 
 # Install only necessary system packages
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
-    libgl1-mesa-glx \
-    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgl1 \
+    libglu1-mesa \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements
@@ -19,18 +22,22 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
 # Stage 2: Runtime
-FROM python:3.11-slim
+FROM python:3.11
 
 WORKDIR /app
 
 # System libraries for OpenCV
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libgl1-mesa-glx \
-    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgl1 \
+    libglu1-mesa \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy installed packages from builder
+# Copy installed packages and executables from builder
 COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
 
 # Copy application code (without training data)
 COPY app/ ./app/

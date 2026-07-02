@@ -1,9 +1,9 @@
-torch
-torchvision
-opencv-python
-albumentations
+torch==2.0.1+cpu
+torchvision==0.15.2+cpu
+opencv-python-headless
 matplotlib
 pandas
+numpy<2
 tqdm
 scikit-learn
 fastapi
@@ -17,3 +17,5 @@ aiofiles
 python-dotenv
 gunicorn
 kagglehub
+numpy<2
+--find-links https://download.pytorch.org/whl/torch_stable.html

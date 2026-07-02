@@ -58,3 +58,6 @@ docker-compose.override.yml
 # Monitoring runtime logs
 monitoring/logs/*.jsonl
 monitoring/logs/*.json
+
+# Deployment artifacts
+deploy.zip
