@@ -2,6 +2,7 @@
 Loads trained model and Grad-CAM.
 """
 import sys
+import threading
 from pathlib import Path
 from typing import Optional
 
@@ -73,7 +74,7 @@ class GradCAM:
         # Backward pass for selected class
         one_hot = torch.zeros_like(output)
         one_hot[0, class_idx] = 1
-        output.backward(gradient=one_hot, retain_graph=True)
+        output.backward(gradient=one_hot, retain_graph=False)
 
         # Get gradients and activations
         gradients = self.gradients.detach()  # [1, C, H, W]
@@ -88,7 +89,8 @@ class GradCAM:
 
         # Normalize to [0, 1]
         cam = cam.squeeze().cpu().numpy()
-        cam = (cam - cam.min()) / (cam.max() - cam.min() + 1e-8)
+        cam_min, cam_max = cam.min(), cam.max()
+        cam = (cam - cam_min) / (cam_max - cam_min + 1e-8)
 
         # Resize to original size
         cam = cv2.resize(cam, (IMG_SIZE, IMG_SIZE))
@@ -141,13 +143,15 @@ class ModelService:
             nn.Linear(in_features, NUM_CLASSES),
         )
 
-        # Load weights
-        checkpoint = torch.load(checkpoint_path, map_location=self.device, weights_only=False)
+        # Load weights (weights_only=True for security)
+        checkpoint = torch.load(checkpoint_path, map_location=self.device, weights_only=True)
         model.load_state_dict(checkpoint["model_state_dict"])
         model = model.to(self.device)
 
-        print(f"  Loaded checkpoint from epoch {checkpoint.get('epoch', '?')}, "
-              f"F1={checkpoint.get('val_f1', '?'):.4f}")
+        epoch = checkpoint.get('epoch', '?')
+        val_f1 = checkpoint.get('val_f1', '?')
+        val_f1_str = f"{val_f1:.4f}" if isinstance(val_f1, float) else val_f1
+        print(f"  Loaded checkpoint from epoch {epoch}, F1={val_f1_str}")
 
         return model
 
@@ -213,15 +217,18 @@ class ModelService:
         return self.predict(image)
 
 
-# Singleton service
+# Singleton service with thread-safe locking
 _service: Optional[ModelService] = None
+_service_lock = threading.Lock()
 
 
 def get_model_service() -> ModelService:
-    """Returns the singleton ModelService."""
+    """Returns the singleton ModelService (thread-safe)."""
     global _service
     if _service is None:
-        _service = ModelService()
+        with _service_lock:
+            if _service is None:
+                _service = ModelService()
     return _service
 
 

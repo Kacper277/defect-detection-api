@@ -6,7 +6,7 @@ pandas
 numpy<2
 tqdm
 scikit-learn
-fastapi
+fastapi>=0.104.0
 uvicorn[standard]
 python-multipart
 Pillow
@@ -17,5 +17,4 @@ aiofiles
 python-dotenv
 gunicorn
 kagglehub
-numpy<2
 --find-links https://download.pytorch.org/whl/torch_stable.html

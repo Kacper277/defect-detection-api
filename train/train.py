@@ -290,7 +290,7 @@ def main():
 
     # Confusion matrix for best model
     if best_epoch > 0:
-        best_checkpoint = torch.load(CHECKPOINT_DIR / "best_model.pth", map_location=device, weights_only=False)
+        best_checkpoint = torch.load(CHECKPOINT_DIR / "best_model.pth", map_location=device, weights_only=True)
         model.load_state_dict(best_checkpoint["model_state_dict"])
         _, _, _, true_labels, preds = validate(model, val_loader, criterion, device)
 

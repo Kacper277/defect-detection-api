@@ -1,15 +1,18 @@
-"""
-FastAPI REST API for production defect detection.
+"""FastAPI REST API for production defect detection.
 
 Endpoints:
 - POST /predict: accepts an image, returns prediction + optional Grad-CAM heatmap
 - GET /health: health check
 - GET /classes: list of classes
 """
+from __future__ import annotations
+
 import io
 import sys
+import threading
+from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Any
 
 import cv2
 import numpy as np
@@ -40,7 +43,7 @@ class PredictResponse(BaseModel):
     confidence: float
     all_probabilities: dict[str, float]
     heatmap_shape: list[int]
-    heatmap: Optional[list[list[float]]] = None  # now optional
+    heatmap: Optional[list[list[float]]] = None
 
 
 class HealthResponse(BaseModel):
@@ -49,15 +52,26 @@ class HealthResponse(BaseModel):
     classes: list[str]
 
 
-@app.on_event("startup")
-def startup():
-    """Initialize model on startup."""
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan context manager for FastAPI startup/shutdown."""
     print("Loading model...")
     try:
         get_model_service()
         print("Model loaded successfully!")
     except Exception as e:
         print(f"ERROR loading model: {e}")
+    yield
+    print("Shutting down...")
+
+
+app = FastAPI(
+    title="Defect Detection API",
+    description="API for production defect detection on images (NEU-DET). "
+                "Uses ResNet-18 + Grad-CAM.",
+    version="1.0.0",
+    lifespan=lifespan,
+)
 
 
 @app.get("/", include_in_schema=False)
@@ -97,7 +111,7 @@ def get_classes():
 @app.post("/predict", response_model=PredictResponse)
 async def predict(
     file: UploadFile = File(...),
-    include_heatmap: bool = False,  # default False – faster
+    include_heatmap: bool = False,
 ):
     """
     Performs defect prediction on uploaded image.
@@ -142,7 +156,7 @@ async def predict(
         try:
             log_prediction(result, contents)
             drift = detect_drift({
-                "mean_pixel": result.get("_mean_pixel", 128),  # now works
+                "mean_pixel": result.get("mean_pixel", 128),
                 "confidence": result["confidence"]
             })
             if drift.get("drift_detected"):
@@ -190,9 +204,14 @@ async def predict_with_heatmap_image(file: UploadFile = File(...)):
         service = get_model_service()
         result = service.predict_bytes(contents)
 
+        if "heatmap" not in result:
+            raise ValueError("Heatmap generation failed")
+
         # Get original image
         image_array = np.frombuffer(contents, np.uint8)
         original = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
+        if original is None:
+            raise ValueError("Failed to decode image")
 
         # Prepare visualization: heatmap on original image
         heatmap = np.array(result["heatmap"], dtype=np.float32)

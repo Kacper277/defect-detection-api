@@ -61,3 +61,6 @@ monitoring/logs/*.json
 
 # Deployment artifacts
 deploy.zip
+
+# Deployment configuration files
+publish-profile.xml
