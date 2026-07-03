@@ -42,11 +42,6 @@ Thumbs.db
 data/
 checkpoints/
 
-# Runtime-essential checkpoint files (keep for deployment)
-!checkpoints/best_model.pth
-!checkpoints/baseline_distribution.json
-!checkpoints/metrics.json
-
 # Docker
 docker-compose.override.yml
 
