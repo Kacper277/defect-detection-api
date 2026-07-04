@@ -3,7 +3,7 @@ torchvision==0.15.2+cpu
 opencv-python-headless
 matplotlib
 pandas
-numpy<2
+numpy
 tqdm
 scikit-learn
 fastapi>=0.104.0
@@ -17,4 +17,3 @@ aiofiles
 python-dotenv
 gunicorn
 kagglehub
---find-links https://download.pytorch.org/whl/torch_stable.html

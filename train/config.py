@@ -28,7 +28,7 @@ STD = [0.229, 0.224, 0.225]   # ImageNet std
 
 # --- Training ---
 BATCH_SIZE = 32
-EPOCHS = 30
+EPOCHS = 5
 LEARNING_RATE = 1e-4
 WEIGHT_DECAY = 1e-5
 NUM_WORKERS = 0  # 0 for Windows (avoid multiprocessing issues)
