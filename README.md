@@ -1,5 +1,5 @@
 # Defect Detection API
-test
+
 A REST API for automated steel surface defect detection using **ResNet-18** fine-tuned on the [NEU-DET](https://www.kaggle.com/datasets/kaustubhdikshit/neu-surface-defect-database) dataset. Includes Grad-CAM heatmap visualization and real-time data drift monitoring.
 
 ---
